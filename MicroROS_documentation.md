@@ -15,16 +15,18 @@ Edit RPi5 files on VS Code remotely from your computer/laptop.
 - Open VS Code → Extensions tab
 - Search for `Remote - SSH` → install the first result.  
 
-
-### 2. Download Dev Containers extension 
-- To work in the container created by `ros2_humble.sh` you can use this extension.
-    - Mount workspace folder 
-
-
-
-### 3. Connect to Raspberry Pi from VS Code
+### 2. Connect to Raspberry Pi from VS Code
 1. Press F1 → type `Remote-SSH: Connect to Host...` → select your host.  
 2. VS Code will open a new window connected to the Pi.  
-3. Open your project folder via File → Open Folder on the Pi.  
 
+
+### 3. Clone Repo
+```shell
+git clone https://github.com/paprika-flow/MicroROS-Workspaces
+```
+Run modified ros2_humble.sh 
+- modified version uses 
+
+### 3. Download Dev Containers extension 
+- To work in the container created by `ros2_humble.sh` you can use this extension.
 
