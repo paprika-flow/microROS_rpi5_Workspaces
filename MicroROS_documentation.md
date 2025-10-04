@@ -7,4 +7,24 @@ This is a shell script that runs a docker command to start ros2 humble (humble i
 
 Allows interactivity with terminal, with access to raspberry pi hardware, network ,dsiplay, inputs, camera, and removes most security restrictions. 
 
-## ROS humble (running in docker container)
+
+## How to setup remote VS Code
+Edit RPi5 files on VS Code remotely from your computer/laptop.
+
+### 1. Download Remote SSH extension
+- Open VS Code → Extensions tab
+- Search for `Remote - SSH` → install the first result.  
+
+
+### 2. Download Dev Containers extension 
+- To work in the container created by `ros2_humble.sh` you can use this extension.
+    - Mount workspace folder 
+
+
+
+### 3. Connect to Raspberry Pi from VS Code
+1. Press F1 → type `Remote-SSH: Connect to Host...` → select your host.  
+2. VS Code will open a new window connected to the Pi.  
+3. Open your project folder via File → Open Folder on the Pi.  
+
+
