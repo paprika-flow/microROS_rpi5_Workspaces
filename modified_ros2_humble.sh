@@ -9,6 +9,6 @@ docker run -it \
 --security-opt apparmor:unconfined \
 -v /dev/input:/dev/input \
 -v /dev/video0:/dev/video0 \
--v /home/pi/MicroROS-Workspaces:/root/MicroROS-Workspaces \
+-v /home/pi/microROS_rpi5_Workspaces:/root/microROS_rpi5_Workspaces \
 yahboomtechnology/ros-humble:4.1.2 /bin/bash /root/1.sh 
 
