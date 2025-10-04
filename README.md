@@ -14,13 +14,13 @@ Edit RPi5 files on VS Code remotely from your computer/laptop.
 ### 3. Clone Repo
 - Clone repo at `/home/pi/`
 ```shell
-git clone https://github.com/paprika-flow/MicroROS-Workspaces
+git clone https://github.com/paprika-flow/microROS_rpi5_Workspaces
 ```
 ### 4. Run modified_ros2_humble.sh 
 - Modified ros2_humble links workspace folder to the container that starts so any changes made to files inside the workspace stays saved on host files and will not be deleted when container is closed. 
 - Any changes made in either place will show up in the other immediately
 ```shell
-sh ~/MicroROS-Workspaces/modified_ros2_humble.sh 
+sh ~/microROS_rpi5_Workspaces/modified_ros2_humble.sh 
 ```
 
 ### 5. Using Dev Containers extension 
