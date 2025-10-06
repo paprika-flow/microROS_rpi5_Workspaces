@@ -30,4 +30,5 @@ sh ~/microROS_rpi5_Workspaces/modified_ros2_humble.sh
 
 ## To Do
 - Create a database of images to test segmentaiton methods
-- 
+- Raspberry PI on eduroam
+- updtae documentation 
