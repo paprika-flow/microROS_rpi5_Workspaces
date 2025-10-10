@@ -36,10 +36,7 @@ def get_edges(img):
 
     print(f"Slope: {m}, Intercept: {b}")
     
-  for x in range(width-1, 0, -1):
-    y = int(m*x + b)
-
-    img[y if y< 240 else 239,x] = [0,0,0]
+  
   return [m, b]
 
 
@@ -49,11 +46,25 @@ img = cv2.imread("C:\\Users\\User\\Downloads\\Fast-SCNN\\Fast-SCNN-pytorch\\test
 
 # Define the cropping region
 # Syntax: img[y1:y2, x1:x2]
-cropped = img[240:480, 320:640]
-slope, intercept = get_edges(cropped)
+left_cropped = img[240:480, 000:240]
+right_cropped = img[240:480, 400:640]
+right_slope, right_intercept = get_edges(right_cropped)
+left_slope, left_intercept = get_edges(left_cropped)
 # Show or save cropped image
-print(slope, intercept)
+print(right_slope, right_intercept)
+print(left_slope, left_intercept)
 
-cv2.imshow("Cropped", cropped)
+width = 640
+height_cropped = 240
+for x in range(width-1, 0, -1):
+    if x < 240:
+      y = int(left_slope*x + left_intercept)
+    elif x >= 400:
+      y = int(right_slope*(x -400) + right_intercept)
+    else: 
+      continue
+    img[y + height_cropped if y< 240 else 239,x] = [0,0,0]
+
+cv2.imshow("Image", img)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
