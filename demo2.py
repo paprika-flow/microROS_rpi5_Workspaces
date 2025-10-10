@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 from torchvision import transforms
-from models.fast_scnn import get_fast_scnn
+from fast_scnn import get_fast_scnn
 from PIL import Image
 import numpy as np
 
