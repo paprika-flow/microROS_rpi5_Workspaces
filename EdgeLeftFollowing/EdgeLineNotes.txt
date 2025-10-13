@@ -1,0 +1,70 @@
+
+How we want:
+
+with just the left_cropped of the image
+Slope: -0.6680150347650172, Intercept: 483.0470070605043
+Slope(normalized): -0.6701308969297614, Intercept: -0.4594987593583121
+
+with max 400 points from left to right
+Slope: -0.6251734469795662, Intercept: 477.57950924926473
+Slope(normalized): -0.6501480478936702, Intercept: -0.4542210592326571
+
+with final code:
+Slope: -0.6621404065561741, Intercept: 482.35585567372533
+Slope(normalized): -0.674586702322489, Intercept: -0.46087226711027995
+
+
+Right distance, but worst angle near the edge
+
+with final:
+Slope: -0.7659428372255145, Intercept: 695.6506901359359
+Slope(normalized): -0.7882773300948296, Intercept: -0.10889075833861826
+
+further distance, but second worst angle near the edge
+
+with right:
+Slope: -0.30876127047777513, Intercept: 497.15199913593625
+Slope(normalized): -0.29669541648009495, Intercept: -0.24005459380593938
+
+
+
+same angle but right distance
+with final:
+Slope: -0.9792473551910292, Intercept: 711.9185349424012
+Slope(normalized): -1.0228393226400816, Intercept: -0.1860598515818238
+
+
+better angle still tilted to left good distance :
+
+Slope: -0.9738190400595647, Intercept: 647.2613666004034
+Slope(normalized): -1.036139882179654, Intercept: -0.3055895639849487
+
+
+Tilted to the right 
+
+(level 1)
+Slope: -0.7229708954392318, Intercept: 455.5595265722906
+Slope(normalized): -0.7172026011929387, Intercept: -0.5416652761810684
+
+
+Level2
+Slope: -0.654833698576936, Intercept: 400.7857554994589
+Slope(normalized): -0.634348449024633, Intercept: -0.6140385846195003
+
+
+Level 3
+Slope: -0.5223295033611748, Intercept: 339.8636255075229
+Slope(normalized): -0.4539932203047432, Intercept: -0.6566649111387459
+
+level 4
+Slope: -0.35906239107703053, Intercept: 319.5521958870687
+Slope(normalized): -0.274292139049302, Intercept: -0.6049196797016904
+
+}
+
+
+
+
+
+
+
