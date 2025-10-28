@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Build and install folders
+build/
+install/
+log/
+
+# Temporary files
+*.swp
+*.tmp
+
+# IDE / Editor
+.vscode/
+.idea/
