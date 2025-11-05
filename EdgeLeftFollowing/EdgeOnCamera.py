@@ -36,8 +36,9 @@ def main(args=None):
     forward_twist.linear.x = yahboom_node.forward_speed
     yahboom_node.pub.publish(forward_twist)
     last_run = time.time()
-    interval = 0.75
-    error = []
+    interval = 0.2
+    error = [0]
+    turn = 0.0
     try:
         while rclpy.ok():
             ret, frame = camera.read()
@@ -56,7 +57,7 @@ def main(args=None):
                     mask_gray = cv.cvtColor(mask_gray, cv.COLOR_BGR2GRAY)
                 if(good_or_bad(mask_gray) == 1):
                     last_run = time.time()
-                    yahboom_node.set_angle(0.0, yahboom_node.forward_speed)
+                    yahboom_node.set_angle(float(turn), yahboom_node.forward_speed)
                     print("bad image")    
                     continue
                 # Get edges and compute PID turn
@@ -67,10 +68,10 @@ def main(args=None):
                 # Display edges and original frame side-by-side
                 mask_edged = show_edges(mask_bgr, edges[0], edges[1], edges[2])
                 combined = np.hstack((frame, mask_bgr))
-                cv.imshow('Robot Camera Feed', combined)
+                cv.imshow('Robot Camera Feed', mask_gray)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")  # e.g., 20251027_140512
                 filename = f"combined/combined_{timestamp}.jpg"
-                cv.imwrite(f"combined_{timestamp}.jpg", combined)
+                cv.imwrite(f"combined_{timestamp}.jpg", mask_gray)
                 last_run = time.time()
                 # Keyboard overrides
             key = cv.waitKey(1) & 0xFF
