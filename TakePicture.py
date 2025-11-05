@@ -38,7 +38,7 @@ class Yahboom_Forward(Node):
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
 
         # speed
-        self.forward_speed = 0.2  # m/s
+        self.forward_speed = 0.1  # m/s
         timer_period = 0.1
 
         self.get_logger().info(f'Node started. Moving forward at {self.forward_speed} m/s.')
@@ -85,6 +85,11 @@ class Yahboom_Forward(Node):
         twist = Twist()
         twist.angular.z = self.forward_speed * 10
         twist.linear.x = 0.0
+        self.pub.publish(twist)
+    def set_angle(self, radians, speed):
+        twist = Twist()
+        twist.angular.z = radians
+        twist.linear.x = speed
         self.pub.publish(twist)
 
 def main(args=None):
