@@ -7,4 +7,4 @@ This branch is for development on the bigger ROSMASTER which will most likely be
     - IMU node
     - 
 - Run the segmentation model on the jetson nano as a node. 
-- 
+- yo

@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'test_node = pkg_sensors.test_node:main'
+            'astra_camera_node = pkg_sensors.astra_camera_node:main',
         ],
     },
 )
