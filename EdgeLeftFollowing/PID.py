@@ -3,7 +3,7 @@ import math
 # defining constants for PID to go forward
 Kp = 0.5
 Ki = 0.005
-Kd = 0.5
+Kd = 0.7
 
 
 
@@ -45,7 +45,7 @@ def PID_sidewalk(slope, intercept, error_list):
       elif slope < 0.34:
           error_slope = 0.46-slope
     error = error_intercept + error_slope*2
-    if len(error_list) > 75: # deleting the first element of the list, so that the integral part of the PID is not dominant
+    if len(error_list) > 100: # deleting the first element of the list, so that the integral part of the PID is not dominant
         error_list.pop(0) 
     if error_list[-1] != 0 or error != 0:
             error_list.append(error)
