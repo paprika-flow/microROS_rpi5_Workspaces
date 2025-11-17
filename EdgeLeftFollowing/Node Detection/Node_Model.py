@@ -7,89 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
-
-
-# === EDGE DETECTION FUNCTION ===
-def get_edges(img, left):
-    height, width, channel = img.shape
-    m = 0
-    b = 0
-    stopped = 1
-    line_points = []
-    previous = np.array([0, 0, 0])
-
-    if left:
-        start = 0
-        end = width - 1
-        step = 1
-    else:
-        start = width - 1
-        end = 0
-        step = -1
-
-    for i in range(start, end, step):
-        if len(line_points) > 150:
-            points = np.array(line_points[-20:], dtype=np.float32)
-            y = points[:, 0]
-            x = np.arange(1, len(y) + 1, dtype=np.float32)
-            A = np.vstack([x, np.ones(len(x))]).T
-            m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-
-        if len(line_points) > 480:
-            break
-
-        if stopped <= 0:
-            stopped = 1
-
-        for j in range(0 + stopped, height):
-            pixel = img[j, i]       # pixel is [B, G, R]
-            b_, g_, r_ = pixel
-            # check for non-black pixel (assuming black background)
-            if (j != height - stopped) and (r_ != 0 or g_ != 0 or b_ != 0):
-                if not np.array_equal(previous, pixel):
-                    line_points.append([j, i])
-                else:
-                    line_points = []
-                break
-            previous = pixel
-
-    N = len(line_points)
-    if N > 1:
-        points = np.array(line_points)
-        y = points[:, 0]
-        x = points[:, 1]
-        A = np.vstack([x, np.ones(len(x))]).T
-        m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-
-    return [m, b]
-
-
-def get_distance_mask_points(mask):
-    """Input: single-channel mask (0/255 or 0/1). Returns: dy, dx, largest_area.
-       dy = vertical abs difference (rows), dx = horizontal abs difference (cols).
-    """
-    # ensure binary single-channel
-    if mask.dtype != np.uint8:
-        mask = (mask > 0.5).astype(np.uint8)
-    else:
-        # normalize 255->1
-        mask = (mask > 0).astype(np.uint8)
-
-    black_mask = 1 - mask
-    contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-    largest_area = max([cv.contourArea(c) for c in contours], default=0)
-
-    white_coords = np.column_stack(np.where(mask > 0))
-    black_coords = np.column_stack(np.where(black_mask > 0))
-
-    white_mean = np.mean(white_coords, axis=0) if len(white_coords) > 0 else np.array([0.0, 0.0])
-    black_mean = np.mean(black_coords, axis=0) if len(black_coords) > 0 else np.array([0.0, 0.0])
-
-    dy = abs(white_mean[0] - black_mean[0])  # rows
-    dx = abs(white_mean[1] - black_mean[1])  # cols
-
-    return dy, dx, largest_area
-
+from extracting_features import get_edges_top, get_distance_mask_points
 
 
 # === MAIN TRAINING PIPELINE ===
@@ -174,7 +92,7 @@ for category_idx, category in enumerate(categories):
             largest_area_list[i-1].append(largest_area)
 
         # === Edge slope ===
-        edges_slope_list.append(get_edges(img, True)[0])
+        edges_slope_list.append(get_edges_top(img, True)[0])
 
         frame_count += 1
 
@@ -288,4 +206,5 @@ with open("model_and_scaler.pkl", "wb") as f:
 
 
 print("\nModel saved as model.pkl ✅")
+
 
