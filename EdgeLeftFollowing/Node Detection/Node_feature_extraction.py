@@ -1,107 +1,133 @@
 import cv2 as cv      # For image processing
 import numpy as np    # For numerical operations
 
-def get_edges_top(img, left):
-  height, width, channel = img.shape
-  m = 0
-  stopped = 1
-  line_points = []
-  previous = np.array([0, 0, 0])
-  if(left):
-    start = 0
-    end = width - 1
-  else:
-    start = width - 1
-    end = 0
+def get_edges_top(gray, left):
+    height, width = gray.shape
+    m = 0.0
+    b = 0.0
+    stopped = 1
+    line_points = []
+    previous = 0
+
+    # scanning direction
+    if left:
+        start = 0
+        end = width
+        step = 1
+    else:
+        start = width - 1
+        end = -1
+        step = -1
+
+    for i in range(start, end, step):
+
+        # fit local slope when enough points
+        if len(line_points) > 150:
+            y = np.array([p[0] for p in line_points[-20:]], dtype=np.float32)
+            x = np.arange(1, len(y) + 1, dtype=np.float32)
+            A = np.vstack([x, np.ones(len(x))]).T
+            m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+
+        if len(line_points) > 480:
+            break
+
+        if stopped <= 0:
+            stopped = 1
+
+        for j in range(stopped, height):
+            pixel = gray[j, i]  # single channel
+            # non-black pixel
+            if pixel != 0:
+                if pixel != previous:
+                    line_points.append([j, i])
+                break
+            previous = pixel
+
+    N = len(line_points)
+    if N > 1:
+        pts = np.array(line_points)
+        y = pts[:, 0]
+        x = pts[:, 1]
+        A = np.vstack([x, np.ones(len(x))]).T
+        m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+
+    return [m, b]
 
 
-  for i in range(start, end, 1):
-    if len(line_points) > 150:
-      # Take the last 20 points
-      points = np.array(line_points[-20:], dtype=np.float32)
 
-      y = points[:, 0]
-      x = np.array([1, 2, 3, 4, 5,6,7,8,9,10, 11, 12, 13, 14, 15,16,17,18,19,20], dtype=np.float32)
 
-      # Fit line y = m*x + b
-      A = np.vstack([x, np.ones(len(x))]).T
-      m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-
-    if len(line_points) > 480:
-      break
-    if stopped <= 0:
-      stopped = 1
-    for j in range(0 + stopped , height):
-      pixel = img[j, i]       # pixel is [B, G, R]
-      b, g, r = pixel
-      if(j != height - stopped and (r != 0 or g != 0 or b != 0)): 
-        if not np.array_equal(previous, pixel):
-          line_points.append([j, i])
-        else:
-          line_points = []
-        break
-      previous = pixel
-  N = len(line_points)
-  if N > 1:
-    points = np.array(line_points)
-
-    y = points[:,0]
-    x = points[:,1]
-    # Fit line: y = m*x + b
-    A = np.vstack([x, np.ones(len(line_points))]).T
-    m, b = np.linalg.lstsq(A, y, rcond=None)[0]  
-    
-  return [m, b]
 
 
 
 def get_distance_mask_points(mask):
-    mask = (mask > 0.5).astype(np.uint8)
+    """Input: single-channel mask (0/255 or 0/1). Returns: dy, dx, largest_area.
+       dy = vertical abs difference (rows), dx = horizontal abs difference (cols).
+    """
+    # ensure binary single-channel
+    if mask.dtype != np.uint8:
+        mask = (mask > 0.5).astype(np.uint8)
+    else:
+        # normalize 255->1
+        mask = (mask > 0).astype(np.uint8)
+
     black_mask = 1 - mask
     contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     largest_area = max([cv.contourArea(c) for c in contours], default=0)
 
-    # === NEW FEATURE: mean position of white and black pixels ===
     white_coords = np.column_stack(np.where(mask > 0))
     black_coords = np.column_stack(np.where(black_mask > 0))
 
-    # Mean positions (y, x)
-    white_mean = np.mean(white_coords, axis=0) if len(white_coords) > 0 else np.array([0, 0])
-    black_mean = np.mean(black_coords, axis=0) if len(black_coords) > 0 else np.array([0, 0])
+    white_mean = np.mean(white_coords, axis=0) if len(white_coords) > 0 else np.array([0.0, 0.0])
+    black_mean = np.mean(black_coords, axis=0) if len(black_coords) > 0 else np.array([0.0, 0.0])
 
-    # Compute distance and ratio
-    distance = np.linalg.norm(white_mean - black_mean)  # Euclidean distance
+    dy = abs(white_mean[0] - black_mean[0])  # rows
+    dx = abs(white_mean[1] - black_mean[1])  # cols
 
-    return distance, largest_area
+    return dy, dx, largest_area
+
 
 
 
 
 def extract_features_from_frames(grays):
-    distance_list = [[], []]
-    largest_area_list = [[], []]
-    edges_slope_list = []
+    num_sections = 2
 
+  
+    distance_y_list = [[] for _ in range(num_sections)]
+    distance_x_list = [[] for _ in range(num_sections)]
+    largest_area_list = [[] for _ in range(num_sections)]
+    edges_slope_list = []
+  
     for gray in grays:
         height, width = gray.shape
         for i in range(1, 3):
             left_strip = int(0.15 * i * width)
-            distance, largest_area = get_distance_mask_points(gray[:, :left_strip])
-            distance_list[i - 1].append(distance)
-            largest_area_list[i - 1].append(largest_area)
+            strip_mask = gray[:, :left_strip]
+            dy, dx, largest_area = get_distance_mask_points(strip_mask)
+
+            distance_y_list[i-1].append(dy)
+            distance_x_list[i-1].append(dx)
+            largest_area_list[i-1].append(largest_area)
+
 
         edges_slope_list.append(get_edges_top(cv.cvtColor(gray, cv.COLOR_GRAY2BGR), True)[0])
 
-    section1_distance = np.mean(distance_list[0])
-    section2_distance = np.mean(distance_list[1])
-    section1_la = np.mean(largest_area_list[0])
-    section2_la = np.mean(largest_area_list[1])
-    slope_average = np.mean(edges_slope_list)
+  
+    features = np.array([[
+        np.mean(distance_y_list[0]),
+        np.mean(distance_y_list[1]),
+        np.mean(largest_area_list[0]),
+        np.mean(largest_area_list[1]),
+        np.mean(edges_slope_list),
 
-    return np.array([
-        section1_distance, np.std(distance_list[0]),
-        section2_distance, np.std(distance_list[1]),
-        section1_la, np.std(largest_area_list[0]),
-        section2_la, np.std(largest_area_list[1]),
-        slope_average, np.std(edges_slope_list)
-    ])
+        np.std(distance_x_list[0]),
+        np.std(distance_x_list[1]),
+        np.std(distance_y_list[0]),
+        np.std(distance_y_list[1]),
+        np.std(largest_area_list[0]),
+        np.std(largest_area_list[1]),
+        np.std(edges_slope_list)
+    ]])
+
+    return features
+
