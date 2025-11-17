@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
-from extracting_features import get_edges_top, get_distance_mask_points
+from Node_feature_extraction import get_edges_top, get_distance_mask_points
 
 
 # === MAIN TRAINING PIPELINE ===
@@ -206,5 +206,6 @@ with open("model_and_scaler.pkl", "wb") as f:
 
 
 print("\nModel saved as model.pkl ✅")
+
 
 
