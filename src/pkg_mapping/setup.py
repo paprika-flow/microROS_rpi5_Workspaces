@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'pkg_navigation'
+package_name = 'pkg_mapping'
 
 setup(
     name=package_name,
@@ -20,7 +20,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'sidewalk_follower = pkg_navigation.sidewalk_follower_node:main'
         ],
     },
 )
