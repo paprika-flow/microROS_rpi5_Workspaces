@@ -134,7 +134,7 @@ def main(args=None):
                         if len(grays) > 5:
                             grays.pop(0)
                     
-                    if len(grays) >=5 and current_time - last_run > 2:
+                    '''if len(grays) >=5 and current_time - last_run > 2:
                         yahboom_node.set_angle(0.0, 0.15)
                         features = extract_features_from_frames(grays, left)        
                         #y_pred = model_node.predict(X_new)[0]
@@ -162,7 +162,7 @@ def main(args=None):
                                 break
                         else:
                             print(f"No split detected!")
-                        last_run = time.time()
+                        last_run = time.time()'''
                             
                     # Showing and saving the mask
                     timestamp = time.strftime("%Y%m%d_%H%M%S")  # e.g., 20251027_140512
