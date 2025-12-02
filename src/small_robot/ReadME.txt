@@ -1,1 +1,1 @@
-I commented the check if good or bad and the node detection
+I commented the the node detection, to stop the program you need to press cltr+C
