@@ -8,6 +8,7 @@ Kd = 0.7
 
 
 def function_modifier(function, limit):
+    function = function / 2
     # a function that limit another function regarding limits given
     if function > limit:
         return limit
@@ -43,7 +44,7 @@ def PID_sidewalk(slope, intercept, error_list):
       if slope > 0.47:
           error_slope = 0.46-slope
       elif slope < 0.34:
-          error_slope = 0.46-slope
+          error_slope = 0.34-slope
     error = error_intercept + error_slope*2
     if len(error_list) > 100: # deleting the first element of the list, so that the integral part of the PID is not dominant
         error_list.pop(0) 
@@ -52,6 +53,6 @@ def PID_sidewalk(slope, intercept, error_list):
     t = len(error_list) - 1 # find what point in position t in the list the robot is now7
     # mulitplying by -1, because positive twist.angular.z turns right
     function = -1 * (Kp * error_list[t] + Ki * I_sum_list(error_list) + Kd * D_sum_list(error_list, t))
-    angularz = function_modifier(function, 2)
+    angularz = function_modifier(function, .2)
     print(angularz)
     return angularz , error_list

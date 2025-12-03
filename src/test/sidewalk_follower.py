@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+# encoding: utf-8
+
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+import cv2
+import numpy as np
+import torch
+import torch.nn as nn
+import sys
+import os
+import time  # Added for profiling
+
+# Import model architecture
+from models.fast_scnn import get_fast_scnn
+
+# ==========================================
+#               CONFIGURATION
+# ==========================================
+class Config:
+    # Hardware
+    CAMERA_INDEX = 0
+    FORWARD_SPEED = 0.10
+    
+    # Model
+    WEIGHTS_PATH = "florida_sidewalk.pth"
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    SIDEWALK_CLASS = 1
+
+    # Edge Detection Constants
+    ACCEPTABLE_B = [255]
+    ACCEPTABLE_G = [255]
+    ACCEPTABLE_R = [255]
+
+# ==========================================
+#           YOUR MATH LOGIC
+# ==========================================
+
+def get_edges(img, left):
+    height, width, channel = img.shape
+    stopped = 1
+    line_points = []
+    previous = np.array([0, 0, 0])
+    
+    if(left):
+        start, end, step = 0, width - 1, 1
+    else:
+        start, end, step = width - 1, 0, -1
+
+    for i in range(start, end, step):
+        if len(line_points) > 150:
+            points = np.array(line_points[-20:], dtype=np.float32)
+            y = points[:, 0]
+            x = np.array([1, 2, 3, 4, 5,6,7,8,9,10, 11, 12, 13, 14, 15,16,17,18,19,20], dtype=np.float32)
+            A = np.vstack([x, np.ones(len(x))]).T
+            m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+            if -0.08 < m < 0.08: break
+        
+        if len(line_points) > 480: break
+        if stopped <= 0: stopped = 1
+            
+        for j in range(height - stopped, 0, -1):
+            pixel = img[j, i]
+            b_val, g_val, r_val = pixel
+            if(j != height - stopped and (r_val not in Config.ACCEPTABLE_R or g_val not in Config.ACCEPTABLE_G or b_val not in Config.ACCEPTABLE_B)): 
+                if not np.array_equal(previous, pixel):
+                    line_points.append([j, i])
+                else:
+                    line_points = []
+                break
+            previous = pixel
+            
+    N = len(line_points)
+    if N > 1:
+        points = np.array(line_points)
+        y = points[:,0]
+        x = points[:,1]
+        A = np.vstack([x, np.ones(len(line_points))]).T
+        m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+        return [m, b, line_points[N-1][0]]
+    
+    return [0, 0, 0]
+
+# --- PID HELPERS ---
+
+def function_modifier(function, limit):
+    if function > limit: return limit
+    elif function < - limit: return -limit
+    else: return function
+
+def I_sum_list(lst): return sum(lst)
+
+def D_sum_list(lst, t):
+    if t > 0: return lst[t] - lst[t-1]
+    return 0
+
+def PID_sidewalk(slope, intercept, error_list):
+    Kp = 0.5
+    Ki = 0.005
+    Kd = 0.7
+    
+    error_intercept = 0
+    error_slope = 0
+    factor = 100
+
+    if intercept > 315:
+        error_intercept = (intercept - 315) / factor
+    elif intercept < 290:
+        error_intercept = (intercept - 290) / factor
+    else:
+        if slope > 0.24:
+            error_slope = 0.2 - slope
+        elif slope < 0.15:
+            error_slope = 0.2 - slope
+            
+    error = error_intercept + error_slope * 2
+    # print(f"intercept {intercept}, slope {slope}")
+    
+    if len(error_list) > 100: error_list.pop(0) 
+    if error_list[-1] != 0 or error != 0: error_list.append(error)
+        
+    t = len(error_list) - 1 
+    function = -1 * (Kp * error_list[t] + Ki * I_sum_list(error_list) + Kd * D_sum_list(error_list, t))
+    angularz = function_modifier(function, 0.2)
+    
+    return angularz, error_list
+
+# ==========================================
+#               ROS NODE
+# ==========================================
+
+class SidewalkHybridController(Node):
+    def __init__(self):
+        super().__init__('sidewalk_hybrid_controller')
+        self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.get_logger().info("Initializing Controller...")
+
+        # 1. Load Model
+        self.model = get_fast_scnn('citys', pretrained=False, root='./weights', map_cpu=True)
+        self._perform_surgery()
+        self._load_weights()
+        self.model.to(Config.DEVICE)
+        self.model.eval()
+        
+        # Warmup
+        if Config.DEVICE == 'cuda':
+            dummy = torch.randn(1, 3, 256, 512).to(Config.DEVICE)
+            self.model(dummy)
+
+        # 2. Setup Camera
+        self.cap = cv2.VideoCapture(Config.CAMERA_INDEX)
+        
+        # 3. PID State
+        self.error_list = [0]
+        
+        # Start Loop
+        self.create_timer(1, self.control_loop)
+
+    def _perform_surgery(self):
+        classifier_block = self.model.classifier.conv
+        if isinstance(classifier_block, nn.Sequential):
+            for i, layer in enumerate(classifier_block):
+                if isinstance(layer, nn.Conv2d):
+                    classifier_block[i] = nn.Conv2d(layer.in_channels, 2, kernel_size=1)
+                    break
+        else:
+            self.model.classifier.conv = nn.Conv2d(classifier_block.in_channels, 2, kernel_size=1)
+
+    def _load_weights(self):
+        if not os.path.exists(Config.WEIGHTS_PATH):
+            self.get_logger().error(f"Weights file not found: {Config.WEIGHTS_PATH}")
+            sys.exit(1)
+        state = torch.load(Config.WEIGHTS_PATH, map_location=Config.DEVICE)
+        self.model.load_state_dict(state)
+
+    def preprocess(self, img_bgr):
+        img_resized = cv2.resize(img_bgr, (512, 256))
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        img_float = img_rgb.astype(np.float32) / 255.0
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        img_norm = (img_float - mean) / std
+        img_chw = img_norm.transpose((2, 0, 1))
+        return torch.from_numpy(img_chw).unsqueeze(0).float()
+
+    def control_loop(self):
+        t0 = time.time() # START
+        
+        ret, frame = self.cap.read()
+        if not ret: return
+        
+        t1 = time.time() # Cam Read Done
+
+        # 1. INFERENCE
+        input_tensor = self.preprocess(frame).to(Config.DEVICE)
+        with torch.no_grad():
+            output = self.model(input_tensor)[0]
+            pred = torch.argmax(output, 1).squeeze(0).cpu().numpy()
+            
+        if Config.DEVICE == 'cuda': torch.cuda.synchronize()
+        t2 = time.time() # Inference Done
+
+        # 2. MASK GENERATION
+        mask_small = (pred == Config.SIDEWALK_CLASS).astype(np.uint8) * 255
+        h, w = frame.shape[:2]
+        mask = cv2.resize(mask_small, (w, h), interpolation=cv2.INTER_NEAREST)
+        mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        
+        t3 = time.time() # Mask Done
+
+        # 3. GET EDGES (Your Logic)
+        edges = get_edges(mask_bgr, left=True)
+        slope = edges[0]
+        intercept = edges[1]
+        
+        t4 = time.time() # Edges Done
+
+        # 4. PID CONTROL (Your Logic)
+        turn_z, self.error_list = PID_sidewalk(-slope, intercept, self.error_list)
+        
+        t5 = time.time() # PID Done
+
+        # 5. MOVE
+        twist = Twist()
+        twist.linear.x = Config.FORWARD_SPEED
+        twist.angular.z = float(turn_z)
+        self.pub.publish(twist)
+
+        # 6. DEBUG DISPLAY
+        if abs(slope) > 0.01:
+            try:
+                y1, y2 = h, int(h/2)
+                x1 = int((y1 - intercept) / slope)
+                x2 = int((y2 - intercept) / slope)
+                cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+            except:
+                pass
+
+        debug = np.hstack((frame, mask_bgr))
+        
+        # Calculate timings
+        d_cam   = t1 - t0
+        d_infer = t2 - t1
+        d_mask  = t3 - t2
+        d_edges = t4 - t3
+        d_pid   = t5 - t4
+        total   = time.time() - t0
+        fps     = 1.0 / total if total > 0 else 0
+
+        # Print stats to terminal
+        print(f"[TIME] Cam:{d_cam:.3f} | AI:{d_infer:.3f} | Mask:{d_mask:.3f} | Edge:{d_edges:.3f} | PID:{d_pid:.3f} | FPS:{fps:.1f}")
+
+        cv2.imshow("Sidewalk Follower", debug)
+        
+        if cv2.waitKey(1) == ord('q'):
+            self.stop()
+            sys.exit(0)
+
+    def stop(self):
+        self.pub.publish(Twist())
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = SidewalkHybridController()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.stop()
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
