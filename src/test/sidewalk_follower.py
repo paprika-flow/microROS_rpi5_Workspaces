@@ -11,6 +11,8 @@ import torch.nn as nn
 import sys
 import os
 import time  # Added for profiling
+import threading
+
 
 # Import model architecture
 from models.fast_scnn import get_fast_scnn
@@ -150,13 +152,32 @@ class SidewalkHybridController(Node):
 
         # 2. Setup Camera
         self.cap = cv2.VideoCapture(Config.CAMERA_INDEX)
+        # optional: try to minimize capture buffer if supported
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        self.latest_frame = None
+        self._reader_running = True
+        self._reader_thread = threading.Thread(target=self._capture_reader, daemon=True)
+        self._reader_thread.start()
+
         
         # 3. PID State
         self.error_list = [0]
         
         # Start Loop
         self.create_timer(1, self.control_loop)
+        
+    def _capture_reader(self):
+        # continuously read frames and store the newest in self.latest_frame
+        while self._reader_running:
+            ret, frame = self.cap.read()
+            if ret:
+                # store latest copy (no big copy needed, but safe to copy)
+                self.latest_frame = frame
+            else:
+                time.sleep(0.01)
 
+    
     def _perform_surgery(self):
         classifier_block = self.model.classifier.conv
         if isinstance(classifier_block, nn.Sequential):
@@ -185,10 +206,10 @@ class SidewalkHybridController(Node):
         return torch.from_numpy(img_chw).unsqueeze(0).float()
 
     def control_loop(self):
-        t0 = time.time() # START
-        
-        ret, frame = self.cap.read()
-        if not ret: return
+        t0 = time.time()
+        frame = self.latest_frame
+        if frame is None:
+            return  # no frame yet
         
         t1 = time.time() # Cam Read Done
 
@@ -258,7 +279,13 @@ class SidewalkHybridController(Node):
             sys.exit(0)
 
     def stop(self):
+        self._reader_running = False
+        if hasattr(self, "_reader_thread"):
+            self._reader_thread.join(timeout=0.5)
+        if self.cap is not None:
+            self.cap.release()
         self.pub.publish(Twist())
+
 
 def main(args=None):
     rclpy.init(args=args)
