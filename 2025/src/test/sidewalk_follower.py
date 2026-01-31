@@ -10,9 +10,8 @@ import torch
 import torch.nn as nn
 import sys
 import os
-import time  # Added for profiling
+import time
 import threading
-
 
 # Import model architecture
 from models.fast_scnn import get_fast_scnn
@@ -23,8 +22,11 @@ from models.fast_scnn import get_fast_scnn
 class Config:
     # Hardware
     CAMERA_INDEX = 0
-    FORWARD_SPEED = 0.10
+    FORWARD_SPEED = 0.15
     
+    # Logic
+    SWITCH_INTERVAL = 45.0  # Seconds between switching sides
+
     # Model
     WEIGHTS_PATH = "florida_sidewalk.pth"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -45,6 +47,7 @@ def get_edges(img, left):
     line_points = []
     previous = np.array([0, 0, 0])
     
+    # Determine scan direction based on 'left' flag
     if(left):
         start, end, step = 0, width - 1, 1
     else:
@@ -80,6 +83,7 @@ def get_edges(img, left):
         x = points[:,1]
         A = np.vstack([x, np.ones(len(line_points))]).T
         m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+        
         return [m, b, line_points[N-1][0]]
     
     return [0, 0, 0]
@@ -87,6 +91,7 @@ def get_edges(img, left):
 # --- PID HELPERS ---
 
 def function_modifier(function, limit):
+    function = function * 0.4
     if function > limit: return limit
     elif function < - limit: return -limit
     else: return function
@@ -97,35 +102,39 @@ def D_sum_list(lst, t):
     if t > 0: return lst[t] - lst[t-1]
     return 0
 
-def PID_sidewalk(slope, intercept, error_list):
+def PID_sidewalk(slope, intercept, error_list, left):
     Kp = 0.5
-    Ki = 0.005
-    Kd = 0.7
+    Ki = 0.01
+    Kd = 0.8
     
     error_intercept = 0
     error_slope = 0
     factor = 100
 
-    if intercept > 315:
-        error_intercept = (intercept - 315) / factor
+    if intercept > 320:
+        error_intercept = (intercept - 310) / factor
     elif intercept < 290:
-        error_intercept = (intercept - 290) / factor
+        error_intercept = (intercept - 310) / factor
     else:
-        if slope > 0.24:
-            error_slope = 0.2 - slope
-        elif slope < 0.15:
-            error_slope = 0.2 - slope
-            
-    error = error_intercept + error_slope * 2
-    # print(f"intercept {intercept}, slope {slope}")
+        # print(f"Intercept * slope = {intercept*slope: .3f}")
+        intercept_slope = intercept*slope
+        if intercept_slope < 60:
+            error_slope =   80 - intercept_slope
+        elif slope > 80:
+            error_slope = 60 - intercept_slope
+           
+    error = error_intercept + error_slope / 200
     
     if len(error_list) > 100: error_list.pop(0) 
     if error_list[-1] != 0 or error != 0: error_list.append(error)
         
     t = len(error_list) - 1 
     function = -1 * (Kp * error_list[t] + Ki * I_sum_list(error_list) + Kd * D_sum_list(error_list, t))
-    angularz = function_modifier(function, 0.2)
+    angularz = function_modifier(function, 0.15)
     
+    # Invert logic for right side following
+    if not left:
+        angularz *= -1
     return angularz, error_list
 
 # ==========================================
@@ -145,14 +154,17 @@ class SidewalkHybridController(Node):
         self.model.to(Config.DEVICE)
         self.model.eval()
         
+        # 2. Setup Switching State
+        self.left = False # Start following Right side
+        self.last_switch_time = time.time()
+        
         # Warmup
         if Config.DEVICE == 'cuda':
             dummy = torch.randn(1, 3, 256, 512).to(Config.DEVICE)
             self.model(dummy)
 
-        # 2. Setup Camera
+        # 3. Setup Camera
         self.cap = cv2.VideoCapture(Config.CAMERA_INDEX)
-        # optional: try to minimize capture buffer if supported
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         self.latest_frame = None
@@ -160,23 +172,19 @@ class SidewalkHybridController(Node):
         self._reader_thread = threading.Thread(target=self._capture_reader, daemon=True)
         self._reader_thread.start()
 
-        
-        # 3. PID State
+        # 4. PID State
         self.error_list = [0]
         
         # Start Loop
-        self.create_timer(1, self.control_loop)
+        self.create_timer(0.5, self.control_loop)
         
     def _capture_reader(self):
-        # continuously read frames and store the newest in self.latest_frame
         while self._reader_running:
             ret, frame = self.cap.read()
             if ret:
-                # store latest copy (no big copy needed, but safe to copy)
                 self.latest_frame = frame
             else:
                 time.sleep(0.01)
-
     
     def _perform_surgery(self):
         classifier_block = self.model.classifier.conv
@@ -206,12 +214,27 @@ class SidewalkHybridController(Node):
         return torch.from_numpy(img_chw).unsqueeze(0).float()
 
     def control_loop(self):
-        t0 = time.time()
         frame = self.latest_frame
         if frame is None:
             return  # no frame yet
-        
-        t1 = time.time() # Cam Read Done
+            
+        # --- SWITCHING LOGIC ---
+        current_time = time.time()
+        if current_time - self.last_switch_time > Config.SWITCH_INTERVAL:
+            self.left = not self.left # Toggle direction
+            self.last_switch_time = current_time
+            
+            # CRITICAL: Reset PID error memory. 
+            # If we don't do this, the PID will try to correct the left wall 
+            # using the error from the right wall, causing a massive jerk.
+            self.error_list = [0] 
+            
+            msg = f"SWITCHED DIRECTION! Now following: {'LEFT' if self.left else 'RIGHT'}"
+            self.get_logger().info(msg)
+            print(f"\n{msg}\n")
+        # -----------------------
+
+        height, width, channel = frame.shape
 
         # 1. INFERENCE
         input_tensor = self.preprocess(frame).to(Config.DEVICE)
@@ -220,27 +243,27 @@ class SidewalkHybridController(Node):
             pred = torch.argmax(output, 1).squeeze(0).cpu().numpy()
             
         if Config.DEVICE == 'cuda': torch.cuda.synchronize()
-        t2 = time.time() # Inference Done
 
         # 2. MASK GENERATION
         mask_small = (pred == Config.SIDEWALK_CLASS).astype(np.uint8) * 255
         h, w = frame.shape[:2]
         mask = cv2.resize(mask_small, (w, h), interpolation=cv2.INTER_NEAREST)
         mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        
-        t3 = time.time() # Mask Done
 
         # 3. GET EDGES (Your Logic)
-        edges = get_edges(mask_bgr, left=True)
+        # We pass self.left here so the scanner knows which side to scan from
+        edges = get_edges(mask_bgr, left=self.left)
         slope = edges[0]
         intercept = edges[1]
         
-        t4 = time.time() # Edges Done
+        # Normalize Coordinate System for PID
+        # If following right, we adjust intercept to be relative to the edge, and invert slope
+        if not self.left:
+            intercept += slope * width
+            slope = -slope
 
-        # 4. PID CONTROL (Your Logic)
-        turn_z, self.error_list = PID_sidewalk(-slope, intercept, self.error_list)
-        
-        t5 = time.time() # PID Done
+        # 4. PID CONTROL
+        turn_z, self.error_list = PID_sidewalk(-slope, intercept, self.error_list, self.left)
 
         # 5. MOVE
         twist = Twist()
@@ -252,27 +275,27 @@ class SidewalkHybridController(Node):
         if abs(slope) > 0.01:
             try:
                 y1, y2 = h, int(h/2)
-                x1 = int((y1 - intercept) / slope)
-                x2 = int((y2 - intercept) / slope)
-                cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                # Reverse the intercept/slope math for visualization if needed
+                viz_intercept = edges[1]
+                viz_slope = edges[0]
+                
+                x1 = int((y1 - viz_intercept) / viz_slope)
+                x2 = int((y2 - viz_intercept) / viz_slope)
+                
+                # Draw Red line for Right, Green line for Left
+                color = (0, 255, 0) if self.left else (0, 0, 255)
+                cv2.line(frame, (x1, y1), (x2, y2), color, 3)
             except:
                 pass
 
-        debug = np.hstack((frame, mask_bgr))
-        
-        # Calculate timings
-        d_cam   = t1 - t0
-        d_infer = t2 - t1
-        d_mask  = t3 - t2
-        d_edges = t4 - t3
-        d_pid   = t5 - t4
-        total   = time.time() - t0
-        fps     = 1.0 / total if total > 0 else 0
+        # Add text to debug indicating mode
+        mode_text = f"Mode: {'LEFT' if self.left else 'RIGHT'} | Time to switch: {int(Config.SWITCH_INTERVAL - (current_time - self.last_switch_time))}s"
+        cv2.putText(debug_frame := np.hstack((frame, mask_bgr)), mode_text, (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-        # Print stats to terminal
-        print(f"[TIME] Cam:{d_cam:.3f} | AI:{d_infer:.3f} | Mask:{d_mask:.3f} | Edge:{d_edges:.3f} | PID:{d_pid:.3f} | FPS:{fps:.1f}")
+        print(f"[INFO] Mode:{'L' if self.left else 'R'} | Slope:{slope:.3f} | Turn:{turn_z:.3f}")
 
-        cv2.imshow("Sidewalk Follower", debug)
+        cv2.imshow("Sidewalk Follower", debug_frame)
         
         if cv2.waitKey(1) == ord('q'):
             self.stop()
